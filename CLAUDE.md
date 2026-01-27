@@ -67,7 +67,7 @@ xcrun devicectl device process launch --device <DEVICE_ID> com.macremote.app
 ## Known Issues
 
 ### Critical
-1. **Keyboard input not working** - Hardware keyboard (Magic Keyboard) and on-screen keyboard input not sending to Mac lock screen. Hidden TextField approach may need replacement with proper key event handling.
+1. ~~**Keyboard input not working**~~ **FIXED** - Now uses UIKit-based `KeyboardInputView` that properly handles both software and hardware keyboard input via UIKeyInput protocol and `pressesBegan/pressesEnded` responder methods. SwiftUI's `.onKeyPress()` has known bugs with iPad hardware keyboards.
 
 2. **Touch/Mouse input unreliable** - Gestures sometimes don't register. May need to verify coordinate conversion between iPad touch and Mac screen coordinates.
 

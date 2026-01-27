@@ -24,6 +24,7 @@
 		CON001 /* AddConnectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC014; };
 		SES001 /* SessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC015; };
 		SES002 /* ScreenCanvasView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC016; };
+		SES003 /* KeyboardInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC020; };
 		SET001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC017; };
 		UTL001 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC018; };
 		VNC005 /* ZlibDecompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC019; };
@@ -50,6 +51,7 @@
 		SRC017 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		SRC018 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		SRC019 /* ZlibDecompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZlibDecompressor.swift; sourceTree = "<group>"; };
+		SRC020 /* KeyboardInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInputView.swift; sourceTree = "<group>"; };
 		RES001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -126,6 +128,7 @@
 			children = (
 				SRC015 /* SessionView.swift */,
 				SRC016 /* ScreenCanvasView.swift */,
+				SRC020 /* KeyboardInputView.swift */,
 			);
 			path = Session;
 			sourceTree = "<group>";
@@ -296,6 +299,7 @@
 				CON001 /* AddConnectionView.swift in Sources */,
 				SES001 /* SessionView.swift in Sources */,
 				SES002 /* ScreenCanvasView.swift in Sources */,
+				SES003 /* KeyboardInputView.swift in Sources */,
 				SET001 /* SettingsView.swift in Sources */,
 				UTL001 /* Constants.swift in Sources */,
 				VNC005 /* ZlibDecompressor.swift in Sources */,

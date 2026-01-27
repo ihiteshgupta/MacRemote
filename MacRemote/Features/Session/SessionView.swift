@@ -6,8 +6,7 @@ struct SessionView: View {
 
     @StateObject private var vncClient = VNCClient()
     @State private var inputMode: InputMode = .touch
-    @State private var showKeyboard = false
-    @State private var displayMode: DisplayMode = .primary  // Default to primary display only
+    @State private var displayMode: DisplayMode = .all  // Show full screen by default
     @State private var showAuthPrompt = false
     @State private var password = ""
     @State private var errorMessage: String?
@@ -15,8 +14,7 @@ struct SessionView: View {
     @State private var toolbarOpacity: Double = 1.0
     @State private var spinnerRotation: Double = 0
     @State private var connectionTimeoutTask: Task<Void, Never>?
-    @State private var keyboardText = ""
-    @FocusState private var isKeyboardFocused: Bool
+    @State private var isKeyboardActive = false
 
     var body: some View {
         ZStack {
@@ -48,18 +46,19 @@ struct SessionView: View {
                 }
             }
 
-            // Hidden text field for keyboard input - positioned off-screen
-            TextField("", text: $keyboardText)
-                .focused($isKeyboardFocused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.asciiCapable)
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
-                .position(x: -100, y: -100)
-                .onChange(of: keyboardText) { oldValue, newValue in
-                    handleKeyboardInput(oldValue: oldValue, newValue: newValue)
-                }
+            // Keyboard input handler - uses UIKit for reliable hardware keyboard support
+            // Needs proper size for keyboard to appear, but positioned to not interfere
+            VStack {
+                Spacer()
+                KeyboardInputView(
+                    onKeyEvent: { event in
+                        vncClient.sendKeyEvent(event)
+                    },
+                    isActive: $isKeyboardActive
+                )
+                .frame(height: 44)
+                .opacity(isKeyboardActive ? 0.01 : 0)
+            }
         }
         .statusBarHidden()
         .persistentSystemOverlays(.hidden)
@@ -323,13 +322,13 @@ struct SessionView: View {
             // Action buttons
             HStack(spacing: 12) {
                 Button {
-                    isKeyboardFocused.toggle()
+                    isKeyboardActive.toggle()
                 } label: {
-                    Image(systemName: isKeyboardFocused ? "keyboard.fill" : "keyboard")
+                    Image(systemName: isKeyboardActive ? "keyboard.fill" : "keyboard")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(isKeyboardFocused ? .blue : .white)
+                        .foregroundStyle(isKeyboardActive ? .blue : .white)
                         .frame(width: 44, height: 44)
-                        .background(isKeyboardFocused ? Color.white : Color.white.opacity(0.15))
+                        .background(isKeyboardActive ? Color.white : Color.white.opacity(0.15))
                         .clipShape(Circle())
                 }
 
@@ -377,47 +376,6 @@ struct SessionView: View {
         }
     }
 
-    private func handleKeyboardInput(oldValue: String, newValue: String) {
-        if newValue.count > oldValue.count {
-            // Character added - send key press
-            let addedChars = newValue.suffix(newValue.count - oldValue.count)
-            for char in addedChars {
-                if let keySym = charToKeySym(char) {
-                    vncClient.sendKeyEvent(KeyEvent(key: keySym, isPressed: true))
-                    vncClient.sendKeyEvent(KeyEvent(key: keySym, isPressed: false))
-                }
-            }
-        } else if newValue.count < oldValue.count {
-            // Character deleted - send backspace
-            let deletedCount = oldValue.count - newValue.count
-            for _ in 0..<deletedCount {
-                vncClient.sendKeyEvent(KeyEvent(key: KeyEvent.backspace, isPressed: true))
-                vncClient.sendKeyEvent(KeyEvent(key: KeyEvent.backspace, isPressed: false))
-            }
-        }
-
-        // Clear the text field periodically to prevent it from growing
-        if keyboardText.count > 100 {
-            keyboardText = ""
-        }
-    }
-
-    private func charToKeySym(_ char: Character) -> UInt32? {
-        // Convert character to X11 keysym
-        let scalar = char.unicodeScalars.first?.value ?? 0
-
-        // ASCII printable characters map directly
-        if scalar >= 0x20 && scalar <= 0x7E {
-            return scalar
-        }
-
-        // Special keys
-        switch char {
-        case "\n", "\r": return KeyEvent.returnKey
-        case "\t": return KeyEvent.tab
-        default: return scalar < 0x100 ? scalar : nil
-        }
-    }
 }
 
 // MARK: - Password Prompt View
