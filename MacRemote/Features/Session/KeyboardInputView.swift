@@ -23,8 +23,12 @@ struct KeyboardInputView: UIViewRepresentable {
         textField.autocapitalizationType = .none
         textField.autocorrectionType = .no
         textField.spellCheckingType = .no
+        textField.smartQuotesType = .no
+        textField.smartDashesType = .no
+        textField.smartInsertDeleteType = .no
         textField.keyboardType = .asciiCapable
         textField.returnKeyType = .default
+        textField.isSecureTextEntry = false  // Don't use secure entry - it can interfere
         textField.backgroundColor = .clear
         textField.textColor = .clear
         textField.tintColor = .clear
@@ -81,40 +85,43 @@ class KeyboardTextField: UITextField, UITextFieldDelegate {
         return result
     }
 
-    // MARK: - UITextFieldDelegate
+    // MARK: - UIKeyInput Override (more reliable than delegate)
+
+    override func insertText(_ text: String) {
+        print("KeyboardTextField: insertText called with '\(text)'")
+        for char in text {
+            print("KeyboardTextField: sending character '\(char)' (ASCII: \(char.asciiValue ?? 0))")
+            sendCharacter(char)
+        }
+        // Don't call super - we don't want text in the field
+    }
+
+    override func deleteBackward() {
+        print("KeyboardTextField: deleteBackward called")
+        keyboardEventHandler?(KeyEvent(key: KeyEvent.backspace, isPressed: true))
+        keyboardEventHandler?(KeyEvent(key: KeyEvent.backspace, isPressed: false))
+        // Don't call super
+    }
+
+    // MARK: - UITextFieldDelegate (backup)
 
     func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
-        print("KeyboardTextField: shouldChangeCharacters - string='\(string)' isEmpty=\(string.isEmpty)")
-        if string.isEmpty {
-            // Deletion (backspace)
-            keyboardEventHandler?(KeyEvent(key: KeyEvent.backspace, isPressed: true))
-            keyboardEventHandler?(KeyEvent(key: KeyEvent.backspace, isPressed: false))
-        } else {
-            // Character input
-            for char in string {
-                print("KeyboardTextField: sending character '\(char)'")
-                sendCharacter(char)
-            }
-        }
-
-        // Clear text periodically to prevent overflow
-        if (textField.text?.count ?? 0) > 50 {
-            textField.text = ""
-        }
-
-        return true
+        // This is now a backup - insertText should handle most cases
+        print("KeyboardTextField: shouldChangeCharacters - string='\(string)' (backup)")
+        return false  // Prevent text from being added since insertText handles it
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
         // Return/Enter key
+        print("KeyboardTextField: Return key pressed")
         keyboardEventHandler?(KeyEvent(key: KeyEvent.returnKey, isPressed: true))
         keyboardEventHandler?(KeyEvent(key: KeyEvent.returnKey, isPressed: false))
         return false
     }
 
     @objc private func textDidChange() {
-        // Backup handler - clear text if it gets too long
-        if (text?.count ?? 0) > 100 {
+        // Clear any text that somehow got added
+        if (text?.count ?? 0) > 0 {
             text = ""
         }
     }
@@ -172,20 +179,19 @@ class KeyboardTextField: UITextField, UITextFieldDelegate {
     // MARK: - Character Handling
 
     private func sendCharacter(_ char: Character) {
-        guard let keySym = charToKeySym(char) else { return }
+        guard let scalar = char.unicodeScalars.first else { return }
+        let charCode = UInt32(scalar.value)
 
-        // Check if we need shift for uppercase or symbols
-        let needsShift = char.isUppercase || shiftRequiredChars.contains(char)
+        // Use Unicode keysym format: 0x01000000 + unicode value
+        // This is more widely compatible with modern VNC servers
+        let keySym = 0x01000000 | charCode
 
-        if needsShift && !pressedModifiers.contains(KeyEvent.shift) {
-            keyboardEventHandler?(KeyEvent(key: KeyEvent.shift, isPressed: true))
-        }
+        print("KeyboardTextField: sendCharacter '\(char)' -> keySym=0x\(String(keySym, radix: 16))")
 
         keyboardEventHandler?(KeyEvent(key: keySym, isPressed: true))
-        keyboardEventHandler?(KeyEvent(key: keySym, isPressed: false))
 
-        if needsShift && !pressedModifiers.contains(KeyEvent.shift) {
-            keyboardEventHandler?(KeyEvent(key: KeyEvent.shift, isPressed: false))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+            self?.keyboardEventHandler?(KeyEvent(key: keySym, isPressed: false))
         }
     }
 
@@ -197,11 +203,6 @@ class KeyboardTextField: UITextField, UITextFieldDelegate {
                keySym == KeyEvent.alt ||
                keySym == KeyEvent.command
     }
-
-    private let shiftRequiredChars: Set<Character> = [
-        "!", "@", "#", "$", "%", "^", "&", "*", "(", ")",
-        "_", "+", "{", "}", "|", ":", "\"", "<", ">", "?", "~"
-    ]
 
     private func uiKeyToKeySym(_ key: UIKey) -> UInt32? {
         switch key.keyCode {
@@ -277,42 +278,19 @@ class KeyboardTextField: UITextField, UITextFieldDelegate {
     private func charToKeySym(_ char: Character) -> UInt32? {
         let scalar = char.unicodeScalars.first?.value ?? 0
 
-        // Letters - send lowercase, shift handled separately
-        if char.isLetter {
-            return UInt32(char.lowercased().unicodeScalars.first?.value ?? scalar)
-        }
-
-        // Shifted symbols -> send base key
+        // Special keys
         switch char {
-        case "!": return UInt32(Character("1").asciiValue!)
-        case "@": return UInt32(Character("2").asciiValue!)
-        case "#": return UInt32(Character("3").asciiValue!)
-        case "$": return UInt32(Character("4").asciiValue!)
-        case "%": return UInt32(Character("5").asciiValue!)
-        case "^": return UInt32(Character("6").asciiValue!)
-        case "&": return UInt32(Character("7").asciiValue!)
-        case "*": return UInt32(Character("8").asciiValue!)
-        case "(": return UInt32(Character("9").asciiValue!)
-        case ")": return UInt32(Character("0").asciiValue!)
-        case "_": return UInt32(Character("-").asciiValue!)
-        case "+": return UInt32(Character("=").asciiValue!)
-        case "{": return UInt32(Character("[").asciiValue!)
-        case "}": return UInt32(Character("]").asciiValue!)
-        case "|": return UInt32(Character("\\").asciiValue!)
-        case ":": return UInt32(Character(";").asciiValue!)
-        case "\"": return UInt32(Character("'").asciiValue!)
-        case "<": return UInt32(Character(",").asciiValue!)
-        case ">": return UInt32(Character(".").asciiValue!)
-        case "?": return UInt32(Character("/").asciiValue!)
-        case "~": return UInt32(Character("`").asciiValue!)
         case "\n", "\r": return KeyEvent.returnKey
         case "\t": return KeyEvent.tab
-        default:
-            // ASCII printable range
-            if scalar >= 0x20 && scalar <= 0x7E {
-                return scalar
-            }
-            return nil
+        default: break
         }
+
+        // For all printable ASCII characters (0x20-0x7E), send the character code directly
+        // VNC/X11 keysyms for Latin-1 match Unicode/ASCII values
+        if scalar >= 0x20 && scalar <= 0x7E {
+            return scalar
+        }
+
+        return nil
     }
 }

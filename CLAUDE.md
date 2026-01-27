@@ -1,113 +1,94 @@
-# MacRemote (Screen Control)
+# CLAUDE.md
 
-iPad app to control Mac using VNC protocol - connects to Mac's built-in Screen Sharing.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Structure
+## Overview
 
-```
-MacRemote/
-├── App/
-│   ├── MacRemoteApp.swift      # App entry point
-│   └── ContentView.swift       # Root view
-├── Core/
-│   ├── Discovery/
-│   │   ├── BonjourBrowser.swift    # mDNS service discovery
-│   │   └── DiscoveredMac.swift     # Discovered Mac model
-│   ├── Network/
-│   │   ├── AdaptiveQuality.swift   # Network quality adaptation
-│   │   └── ConnectionManager.swift # Connection handling
-│   └── VNC/
-│       ├── RFBProtocol.swift       # VNC/RFB protocol definitions
-│       ├── RFBAuth.swift           # VNC authentication (DES)
-│       ├── FrameBuffer.swift       # Screen buffer management
-│       ├── VNCClient.swift         # Main VNC client
-│       └── ZlibDecompressor.swift  # ZRLE decoder (not yet working)
-├── Features/
-│   ├── Home/
-│   │   └── HomeView.swift          # Main screen with Bonjour discovery
-│   ├── Session/
-│   │   ├── SessionView.swift       # Active connection view
-│   │   └── ScreenCanvasView.swift  # Screen display & input handling
-│   ├── Connect/
-│   │   └── AddConnectionView.swift # Manual connection entry
-│   └── Settings/
-│       └── SettingsView.swift      # App settings
-├── Models/
-│   ├── SavedConnection.swift       # SwiftData model for saved connections
-│   └── InputEvent.swift            # Mouse/keyboard event models
-├── Utilities/
-│   └── Constants.swift             # App constants
-└── Resources/
-    └── Assets.xcassets             # App icons and assets
-```
+MacRemote is an iPad app to remotely control a Mac using the VNC protocol. Connects to Mac's built-in Screen Sharing feature.
 
 ## Build & Run
 
 ```bash
-# Build for iPad
-xcodebuild -project MacRemote.xcodeproj -scheme MacRemote -destination 'platform=iOS,name=Hitesh\'s iPad' build
+# Build for iPad Simulator
+xcodebuild -project MacRemote.xcodeproj -scheme MacRemote -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M4)' build
 
-# Install on device
-xcrun devicectl device install app --device <DEVICE_ID> <PATH_TO_APP>
+# Build for physical iPad
+xcodebuild -project MacRemote.xcodeproj -scheme MacRemote -destination 'platform=iOS,name=Hitesh'\''s iPad' build
 
-# Launch
+# List connected devices
+xcrun devicectl list devices
+
+# Install on device (get DEVICE_ID from above command)
+xcrun devicectl device install app --device <DEVICE_ID> build/Build/Products/Debug-iphoneos/MacRemote.app
+
+# Launch on device
 xcrun devicectl device process launch --device <DEVICE_ID> com.macremote.app
 ```
+
+## Architecture
+
+### Data Flow
+
+```
+iPad Touch/Keyboard → ScreenCanvasView/KeyboardInputView
+                    → MouseEvent/KeyEvent structs
+                    → VNCClient.sendMouseEvent/sendKeyEvent
+                    → RFB protocol encoding
+                    → TCP to Mac Screen Sharing
+
+Mac Screen → VNC framebuffer update
+           → VNCClient.receiveFramebufferUpdate
+           → FrameBuffer.updateRegion
+           → UIImage → ScreenCanvasView
+```
+
+### Core Components
+
+**VNC Protocol Stack** (`Core/VNC/`)
+- `VNCClient.swift` - Main client orchestrating connection lifecycle, state machine (disconnected → connecting → handshaking → authenticating → connected), NWConnection TCP handling
+- `RFBProtocol.swift` - RFB 3.8 protocol definitions: message types, encodings (Raw, CopyRect, DesktopSize), pixel formats (RGB888, RGB565)
+- `RFBAuth.swift` - VNC authentication (DES challenge-response with bit-reversed keys) and ARD auth (Diffie-Hellman key exchange, AES-128-ECB credentials)
+- `FrameBuffer.swift` - RGBA pixel buffer with region updates and CopyRect support, renders to UIImage via CGContext
+
+**Input Handling** (`Features/Session/`)
+- `ScreenCanvasView.swift` - Touch → mouse coordinate conversion (accounts for scale, offset, multi-monitor), gesture recognition (tap, double-tap, drag, pinch)
+- `KeyboardInputView.swift` - UIKit-based UITextField wrapper using `UIKeyInput` protocol and `pressesBegan/pressesEnded` for reliable hardware keyboard support (SwiftUI's `.onKeyPress()` has iPad bugs)
+- `SessionView.swift` - Session management, auth prompts, floating toolbar with modifier keys
+
+**Network Discovery** (`Core/Discovery/`)
+- `BonjourBrowser.swift` - NWBrowser for `_rfb._tcp` mDNS service discovery, resolves endpoints to IP addresses
+
+### Key Implementation Details
+
+**VNC Authentication** - Two flows:
+1. VNC Auth (type 2): Server sends 16-byte challenge → client encrypts with DES using bit-reversed password key → returns 16-byte response
+2. ARD Auth (type 30): Diffie-Hellman exchange → MD5 of shared secret as AES key → encrypt 128-byte username+password block
+
+**Coordinate System** - iPad touch coordinates must be converted to remote screen coordinates accounting for:
+- Aspect ratio fitting (letterboxing)
+- Current zoom scale and pan offset
+- Multi-monitor display offset (displayOffsetX for secondary monitor)
+
+**Keyboard Events** - Uses X11 keysyms (e.g., 0xff0d for Return, 0xffe1 for Shift). Hardware keyboard captured via `pressesBegan/pressesEnded`; software keyboard via `UITextFieldDelegate.shouldChangeCharacters`.
 
 ## Requirements
 
 - iOS/iPadOS 17.0+
-- Mac with Screen Sharing enabled
-- VNC password must be enabled on Mac:
-  - System Settings → General → Sharing
-  - Click (i) next to Screen Sharing
+- Mac with Screen Sharing enabled and VNC password set:
+  - System Settings → General → Sharing → Screen Sharing → (i)
   - Enable "VNC viewers may control screen with password"
-  - Set a password
 
 ## Known Issues
 
-### Critical
-1. ~~**Keyboard input not working**~~ **FIXED** - Now uses UIKit-based `KeyboardInputView` that properly handles both software and hardware keyboard input via UIKeyInput protocol and `pressesBegan/pressesEnded` responder methods. SwiftUI's `.onKeyPress()` has known bugs with iPad hardware keyboards.
-
-2. **Touch/Mouse input unreliable** - Gestures sometimes don't register. May need to verify coordinate conversion between iPad touch and Mac screen coordinates.
-
-### High Priority
-3. **ZRLE encoding not working** - Decoder implemented but produces black screen. Currently disabled, using Raw encoding only (less efficient but works).
-
-4. **Multi-monitor display offset** - When using "Primary" or "Secondary" display mode, mouse coordinates may not map correctly to the selected display.
-
-### Medium Priority
-5. **No clipboard sync** - ServerCutText messages are received but ignored. No client-to-server clipboard support.
-
-6. **No Apple Remote Desktop authentication** - Only VNC Auth (type 2) is supported. ARD auth (type 30) and macOS auth (type 35) require complex Diffie-Hellman implementation.
-
-7. **Connection drops not handled gracefully** - Network interruptions may leave app in inconsistent state.
-
-### Low Priority
-8. **No Tight encoding** - Would improve performance on slow networks.
-
-9. **No cursor shape updates** - Remote cursor not shown, using local cursor indicator instead.
-
-10. **Trackpad mode cursor position** - Cursor can drift outside visible area.
+1. **Touch/Mouse input unreliable** - Gestures sometimes don't register; coordinate conversion may be off
+2. **ZRLE encoding broken** - Decoder produces black screen; using Raw encoding only
+3. **Multi-monitor display offset** - Mouse coordinates may not map correctly for non-primary displays
+4. **No ARD auth in practice** - Pure Swift bignum too slow for 1024-bit DH; prefer VNC auth
+5. **No clipboard sync** - ServerCutText ignored, no client-to-server support
 
 ## VNC Protocol Notes
 
-- Uses RFB 3.8 protocol (Apple uses 3.889 variant)
-- Security types: None (1), VNC Auth (2), Apple ARD (30), macOS Auth (35)
-- Encodings supported: Raw (0), CopyRect (1)
-- Encodings planned: ZRLE (16), Tight (7)
-
-## Testing Checklist
-
-- [ ] Bonjour discovery finds Mac
-- [ ] Manual IP connection works
-- [ ] VNC password authentication works
-- [ ] Screen displays correctly
-- [ ] Single tap = click
-- [ ] Double tap = double click
-- [ ] Drag gesture works
-- [ ] Pinch to zoom works
-- [ ] Keyboard input works
-- [ ] Modifier keys (Cmd, Opt, Ctrl, Shift) work
-- [ ] Multi-monitor display selection works
-- [ ] Disconnect/reconnect works
+- RFB version: 3.8 (Apple uses 3.889 variant)
+- Security types supported: None (1), VNC Auth (2)
+- Encodings: Raw (0), CopyRect (1), DesktopSize (-223)
+- Pixel format: 32-bit RGBA (RGB888)

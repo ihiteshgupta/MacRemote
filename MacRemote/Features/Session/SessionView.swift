@@ -8,13 +8,13 @@ struct SessionView: View {
     @State private var inputMode: InputMode = .touch
     @State private var displayMode: DisplayMode = .all  // Show full screen by default
     @State private var showAuthPrompt = false
-    @State private var password = ""
     @State private var errorMessage: String?
     @State private var showToolbar = true
     @State private var toolbarOpacity: Double = 1.0
     @State private var spinnerRotation: Double = 0
     @State private var connectionTimeoutTask: Task<Void, Never>?
     @State private var isKeyboardActive = false
+    @State private var lastKeyPressed: String = ""
 
     var body: some View {
         ZStack {
@@ -36,7 +36,26 @@ struct SessionView: View {
 
                     // Connection status overlay
                     if vncClient.state == .connected {
-                        statusBadge
+                        VStack {
+                            HStack {
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 4) {
+                                    statusBadge
+                                    // Debug: show last key pressed when keyboard is active
+                                    if isKeyboardActive && !lastKeyPressed.isEmpty {
+                                        Text("Key: \(lastKeyPressed)")
+                                            .font(.caption.monospaced())
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 4)
+                                            .background(.green.opacity(0.8))
+                                            .foregroundStyle(.white)
+                                            .cornerRadius(8)
+                                    }
+                                }
+                            }
+                            Spacer()
+                        }
+                        .padding()
                     }
                 }
                 .onTapGesture(count: 3) {
@@ -52,6 +71,14 @@ struct SessionView: View {
                 Spacer()
                 KeyboardInputView(
                     onKeyEvent: { event in
+                        // Show what key is being sent (for debugging)
+                        if event.isPressed {
+                            if event.key < 128, let scalar = Unicode.Scalar(event.key) {
+                                lastKeyPressed = String(Character(scalar))
+                            } else {
+                                lastKeyPressed = "0x\(String(event.key, radix: 16))"
+                            }
+                        }
                         vncClient.sendKeyEvent(event)
                     },
                     isActive: $isKeyboardActive
@@ -98,9 +125,10 @@ struct SessionView: View {
         .sheet(isPresented: $showAuthPrompt) {
             PasswordPromptView(
                 serverName: connection.displayName,
-                onSubmit: { enteredPassword in
-                    password = enteredPassword
-                    vncClient.authenticate(password: enteredPassword)
+                requiresUsername: vncClient.requiresUsername,
+                onSubmit: { username, password in
+                    print("PasswordPrompt submit - password length: \(password.count)")
+                    vncClient.authenticate(username: username, password: password)
                     showAuthPrompt = false
                 },
                 onCancel: {
@@ -108,6 +136,8 @@ struct SessionView: View {
                     disconnect()
                 }
             )
+            .presentationDetents([.height(220)])
+            .interactiveDismissDisabled()
         }
         .alert("Connection Error", isPresented: .init(
             get: { errorMessage != nil },
@@ -382,84 +412,49 @@ struct SessionView: View {
 
 struct PasswordPromptView: View {
     let serverName: String
-    let onSubmit: (String) -> Void
+    let requiresUsername: Bool
+    let onSubmit: (String, String) -> Void
     let onCancel: () -> Void
 
+    @State private var username = ""
     @State private var password = ""
-    @State private var isSecure = true
+    @FocusState private var passwordFocused: Bool
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    HStack {
-                        Image(systemName: "lock.shield.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.blue)
-                        VStack(alignment: .leading) {
-                            Text("Enter VNC Password")
-                                .font(.headline)
-                            Text(serverName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 8)
+            VStack(spacing: 16) {
+                if requiresUsername {
+                    TextField("Username", text: $username)
+                        .textFieldStyle(.roundedBorder)
+                        .textContentType(.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
                 }
 
-                Section("Password") {
-                    HStack {
-                        if isSecure {
-                            SecureField("Enter password", text: $password)
-                                .textContentType(.password)
-                        } else {
-                            TextField("Enter password", text: $password)
-                                .textContentType(.password)
-                        }
-                        Button {
-                            isSecure.toggle()
-                        } label: {
-                            Image(systemName: isSecure ? "eye" : "eye.slash")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-
-                Section {
-                    Button {
+                SecureField("Password", text: $password)
+                    .textFieldStyle(.roundedBorder)
+                    .textContentType(.password)
+                    .focused($passwordFocused)
+                    .onSubmit {
                         if !password.isEmpty {
-                            onSubmit(password)
-                        }
-                    } label: {
-                        HStack {
-                            Spacer()
-                            Text("Connect")
-                                .fontWeight(.semibold)
-                            Spacer()
+                            onSubmit(username, password)
                         }
                     }
-                    .disabled(password.isEmpty)
-                }
             }
+            .padding()
+            .navigationTitle(serverName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
-                    }
+                    Button("Cancel") { onCancel() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Connect") {
-                        if !password.isEmpty {
-                            onSubmit(password)
-                        }
-                    }
-                    .disabled(password.isEmpty)
+                    Button("Connect") { onSubmit(username, password) }
+                        .disabled(password.isEmpty || (requiresUsername && username.isEmpty))
                 }
             }
         }
-        .presentationDetents([.medium])
-        .interactiveDismissDisabled()
+        .onAppear { passwordFocused = true }
     }
 }
 
@@ -493,3 +488,4 @@ struct ModifierKeyButton: View {
         isConnected: .constant(true)
     )
 }
+

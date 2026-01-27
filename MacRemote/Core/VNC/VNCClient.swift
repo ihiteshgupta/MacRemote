@@ -43,8 +43,10 @@ final class VNCClient: ObservableObject {
     private let queue = DispatchQueue(label: "com.macremote.vnc")
 
     private var receiveBuffer = Data()
+    private var username: String = ""
     private var password: String = ""
-    private var pendingAuth: ((String) -> Void)?
+    private var selectedSecurityType: RFBSecurityType?
+    private var pendingAuth: ((String, String) -> Void)?  // (username, password)
 
     // Preferred encodings in order - Raw is most reliable with macOS Screen Sharing
     private let preferredEncodings: [RFBEncoding] = [
@@ -79,10 +81,17 @@ final class VNCClient: ObservableObject {
         connection?.start(queue: queue)
     }
 
-    func authenticate(password: String) {
+    func authenticate(username: String = "", password: String) {
+        print("VNCClient.authenticate called - password length: \(password.count)")
+        self.username = username
         self.password = password
-        pendingAuth?(password)
+        pendingAuth?(username, password)
         pendingAuth = nil
+    }
+
+    /// Returns true if the pending authentication requires username (ARD/macOS auth)
+    var requiresUsername: Bool {
+        selectedSecurityType == .appleDH || selectedSecurityType == .macOSAuth
     }
 
     func disconnect() {
@@ -127,13 +136,14 @@ final class VNCClient: ObservableObject {
             return
         }
 
-        print("Sending key: \(event.key) pressed=\(event.isPressed)")
-
         var data = Data(capacity: 8)
-        data.append(RFBClientMessageType.keyEvent.rawValue)
+        data.append(RFBClientMessageType.keyEvent.rawValue)  // 4
         data.append(event.isPressed ? 1 : 0)
         data.append(contentsOf: [0, 0])  // padding
         data.append(contentsOf: event.key.bigEndianBytes)
+
+        let hexBytes = data.map { String(format: "%02x", $0) }.joined(separator: " ")
+        print("VNC KeyEvent: key=\(event.key) (0x\(String(event.key, radix: 16))) pressed=\(event.isPressed) bytes=[\(hexBytes)]")
 
         send(data)
     }
@@ -225,6 +235,7 @@ final class VNCClient: ObservableObject {
         }
 
         print("Selected security type: \(selectedType)")
+        selectedSecurityType = selectedType
 
         // Send selected type
         send(Data([selectedType.rawValue]))
@@ -245,9 +256,13 @@ final class VNCClient: ObservableObject {
 
         case .appleDH, .macOSAuth:
             // Apple Remote Desktop / macOS authentication
-            // These require complex Diffie-Hellman crypto - show helpful message
-            let availableTypes = types.map { "\($0)" }.joined(separator: ", ")
-            state = .error("Your Mac requires Apple authentication (ARD).\n\nAvailable types: \(availableTypes)\n\nTo connect, please enable VNC password on your Mac:\n\n1. System Settings → General → Sharing\n2. Click (i) next to Screen Sharing\n3. Enable 'VNC viewers may control screen with password'\n4. Set a password")
+            // Uses Diffie-Hellman key exchange with AES-encrypted credentials
+            print("ARD/macOS Auth selected - waiting for DH parameters...")
+            state = .authenticating
+            // Receive: generator (2 bytes) + key length (2 bytes)
+            receive(length: 4) { [weak self] data in
+                self?.handleARDAuthParams(data)
+            }
 
         default:
             let availableTypes = types.map { "\($0)" }.joined(separator: ", ")
@@ -260,16 +275,99 @@ final class VNCClient: ObservableObject {
         if !password.isEmpty {
             performVNCAuth(challenge: challenge, password: password)
         } else {
-            // Request password from UI
-            pendingAuth = { [weak self] password in
+            // Request password from UI (username ignored for VNC auth)
+            pendingAuth = { [weak self] _, password in
                 self?.performVNCAuth(challenge: challenge, password: password)
             }
         }
     }
 
     private func performVNCAuth(challenge: Data, password: String) {
+        print("performVNCAuth - password length: \(password.count), first char: \(password.first ?? Character(" "))")
         let response = RFBAuth.vncAuth(challenge: challenge, password: password)
+        print("VNC auth response generated: \(response.count) bytes")
         send(response)
+        receiveSecurityResult()
+    }
+
+    // MARK: - ARD Authentication (Apple Remote Desktop / macOS Auth)
+
+    private func handleARDAuthParams(_ data: Data) {
+        // Parse: generator (2 bytes) + key length (2 bytes)
+        let generator = UInt16(bigEndian: Data(data[0...1]))
+        let keyLength = UInt16(bigEndian: Data(data[2...3]))
+
+        print("ARD: generator=\(generator), keyLength=\(keyLength) (\(keyLength * 8) bits)")
+
+        // Receive: prime (keyLength bytes) + server public key (keyLength bytes)
+        let totalLength = Int(keyLength) * 2
+        receive(length: totalLength) { [weak self] keyData in
+            self?.handleARDKeyExchange(
+                generator: generator,
+                keyLength: keyLength,
+                prime: Data(keyData[0..<Int(keyLength)]),
+                serverPublicKey: Data(keyData[Int(keyLength)...])
+            )
+        }
+    }
+
+    private func handleARDKeyExchange(generator: UInt16, keyLength: UInt16, prime: Data, serverPublicKey: Data) {
+        print("ARD: Received prime (\(prime.count) bytes) and server public key (\(serverPublicKey.count) bytes)")
+
+        if !username.isEmpty && !password.isEmpty {
+            performARDAuth(
+                generator: generator,
+                keyLength: keyLength,
+                prime: prime,
+                serverPublicKey: serverPublicKey,
+                username: username,
+                password: password
+            )
+        } else {
+            // Request credentials from UI
+            pendingAuth = { [weak self] username, password in
+                self?.performARDAuth(
+                    generator: generator,
+                    keyLength: keyLength,
+                    prime: prime,
+                    serverPublicKey: serverPublicKey,
+                    username: username,
+                    password: password
+                )
+            }
+        }
+    }
+
+    private func performARDAuth(
+        generator: UInt16,
+        keyLength: UInt16,
+        prime: Data,
+        serverPublicKey: Data,
+        username: String,
+        password: String
+    ) {
+        print("ARD: Performing authentication for user '\(username)'")
+
+        guard let result = RFBAuth.ardAuth(
+            generator: generator,
+            keyLength: keyLength,
+            prime: prime,
+            peerKey: serverPublicKey,
+            username: username,
+            password: password
+        ) else {
+            state = .error("ARD authentication crypto failed")
+            return
+        }
+
+        // Send: encrypted credentials (128 bytes) + client public key (keyLength bytes)
+        var response = Data()
+        response.append(result.credentials)  // 128 bytes encrypted username+password
+        response.append(result.publicKey)    // keyLength bytes DH public key
+
+        print("ARD: Sending response - credentials: \(result.credentials.count) bytes, publicKey: \(result.publicKey.count) bytes")
+        send(response)
+
         receiveSecurityResult()
     }
 

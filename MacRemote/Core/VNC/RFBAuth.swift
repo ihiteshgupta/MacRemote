@@ -100,7 +100,8 @@ struct RFBAuth {
     // MARK: - Apple Remote Desktop (Diffie-Hellman)
 
     /// Performs ARD (Apple Remote Desktop) authentication
-    /// Uses Diffie-Hellman key exchange with AES-128 encrypted credentials
+    /// Uses Diffie-Hellman key exchange with AES-128-ECB encrypted credentials
+    /// Protocol: https://github.com/nmap/nmap/blob/master/nselib/vnc.lua
     static func ardAuth(
         generator: UInt16,
         keyLength: UInt16,
@@ -111,27 +112,48 @@ struct RFBAuth {
     ) -> (publicKey: Data, credentials: Data)? {
         let keyLen = Int(keyLength)
 
+        print("ARD Auth: generator=\(generator), keyLen=\(keyLen) (\(keyLen * 8) bits), prime=\(prime.count) bytes, peerKey=\(peerKey.count) bytes")
+
         // 1. Generate random private key
-        var privateKey = [UInt8](repeating: 0, count: keyLen)
-        guard SecRandomCopyBytes(kSecRandomDefault, keyLen, &privateKey) == errSecSuccess else {
+        // Use 16 bytes (128 bits) for speed - still secure for session keys
+        // Note: Pure Swift bignum is slow; a proper implementation would use OpenSSL or GMP
+        let privateKeyLen = min(16, keyLen)
+        var privateKeyBytes = [UInt8](repeating: 0, count: privateKeyLen)
+        guard SecRandomCopyBytes(kSecRandomDefault, privateKeyLen, &privateKeyBytes) == errSecSuccess else {
+            print("ARD Auth: Failed to generate private key")
             return nil
         }
+        // Pad to keyLen for modPow
+        var privateKey = [UInt8](repeating: 0, count: keyLen - privateKeyLen) + privateKeyBytes
+        print("ARD Auth: Generated \(privateKeyLen * 8)-bit private key")
 
         // 2. Compute public key: generator^privateKey mod prime
+        print("ARD Auth: Computing public key (this may take a moment)...")
+        let pubKeyStart = CFAbsoluteTimeGetCurrent()
         guard let publicKey = modPow(
             base: bigIntFromUInt16(generator, length: keyLen),
             exponent: Data(privateKey),
             modulus: prime
-        ) else { return nil }
+        ) else {
+            print("ARD Auth: Failed to compute public key")
+            return nil
+        }
+        print("ARD Auth: Public key computed in \(CFAbsoluteTimeGetCurrent() - pubKeyStart)s")
 
         // 3. Compute shared secret: peerKey^privateKey mod prime
+        print("ARD Auth: Computing shared secret...")
+        let secretStart = CFAbsoluteTimeGetCurrent()
         guard let sharedSecret = modPow(
             base: peerKey,
             exponent: Data(privateKey),
             modulus: prime
-        ) else { return nil }
+        ) else {
+            print("ARD Auth: Failed to compute shared secret")
+            return nil
+        }
+        print("ARD Auth: Shared secret computed in \(CFAbsoluteTimeGetCurrent() - secretStart)s")
 
-        // 4. MD5 hash of shared secret
+        // 4. MD5 hash of shared secret -> AES key
         var md5Hash = [UInt8](repeating: 0, count: Int(CC_MD5_DIGEST_LENGTH))
         sharedSecret.withUnsafeBytes { bytes in
             _ = CC_MD5(bytes.baseAddress, CC_LONG(sharedSecret.count), &md5Hash)
@@ -144,34 +166,30 @@ struct RFBAuth {
         credentials.replaceSubrange(0..<usernameBytes.count, with: usernameBytes)
         credentials.replaceSubrange(64..<(64 + passwordBytes.count), with: passwordBytes)
 
-        // 6. Generate random IV (16 bytes)
-        var iv = [UInt8](repeating: 0, count: 16)
-        guard SecRandomCopyBytes(kSecRandomDefault, 16, &iv) == errSecSuccess else {
-            return nil
-        }
-
-        // 7. AES-128-CBC encrypt credentials
+        // 6. AES-128-ECB encrypt credentials (no IV for ECB mode)
         var encryptedCredentials = [UInt8](repeating: 0, count: 128)
         var encryptedLength = 0
 
         let status = CCCrypt(
             CCOperation(kCCEncrypt),
             CCAlgorithm(kCCAlgorithmAES),
-            CCOptions(0), // No padding, credentials are already 128 bytes
+            CCOptions(kCCOptionECBMode), // ECB mode, no padding needed
             md5Hash, kCCKeySizeAES128,
-            iv,
+            nil, // No IV for ECB
             [UInt8](credentials), 128,
             &encryptedCredentials, 128,
             &encryptedLength
         )
 
-        guard status == kCCSuccess else { return nil }
+        guard status == kCCSuccess else {
+            print("ARD Auth: AES encryption failed with status \(status)")
+            return nil
+        }
 
-        // Return public key (keyLength bytes) and encrypted credentials (16 byte IV + 128 byte ciphertext)
-        var result = Data(iv)
-        result.append(contentsOf: encryptedCredentials)
+        print("ARD Auth: Successfully encrypted credentials, publicKey=\(publicKey.count) bytes")
 
-        return (publicKey: publicKey, credentials: result)
+        // Return public key and encrypted credentials (no IV prefix for ECB)
+        return (publicKey: publicKey, credentials: Data(encryptedCredentials))
     }
 
     // MARK: - Big Integer Helpers (simplified for ARD)
@@ -190,11 +208,13 @@ struct RFBAuth {
     private static func modPow(base: Data, exponent: Data, modulus: Data) -> Data? {
         // Convert to arrays for easier manipulation
         let baseBytes = [UInt8](base)
-        let expBytes = [UInt8](exponent)
+        var expBytes = [UInt8](exponent)
         let modBytes = [UInt8](modulus)
 
-        // Use a simple but slow algorithm for now
-        // For a production app, you'd want to use OpenSSL or a dedicated big integer library
+        // Strip leading zeros from exponent for efficiency
+        while expBytes.count > 1 && expBytes[0] == 0 {
+            expBytes.removeFirst()
+        }
 
         // Initialize result as 1
         var result = [UInt8](repeating: 0, count: modBytes.count)
@@ -202,7 +222,8 @@ struct RFBAuth {
 
         var baseCopy = baseBytes
 
-        // Square-and-multiply algorithm
+        // Square-and-multiply algorithm (right-to-left binary method)
+        // Process only the significant bytes of the exponent
         for byte in expBytes.reversed() {
             for bit in 0..<8 {
                 if (byte >> bit) & 1 == 1 {
@@ -243,34 +264,119 @@ struct RFBAuth {
         return bigMod(product, mod)
     }
 
-    /// Big integer modulo
+    /// Big integer modulo using shift-and-subtract division with quotient estimation
     private static func bigMod(_ a: [UInt8], _ mod: [UInt8]) -> [UInt8] {
+        // Strip leading zeros from mod
+        var modStripped = mod
+        while modStripped.count > 1 && modStripped[0] == 0 {
+            modStripped.removeFirst()
+        }
+
         var result = a
 
-        // Simple subtraction-based reduction
-        while bigCompare(result, mod) >= 0 {
-            // Find the highest non-zero byte position
-            var shift = 0
-            for i in 0..<result.count {
-                if result[i] != 0 {
-                    shift = result.count - i - mod.count
+        // Strip leading zeros from result
+        while result.count > 1 && result[0] == 0 {
+            result.removeFirst()
+        }
+
+        // If result < mod, we're done
+        if bigCompare(result, modStripped) < 0 {
+            while result.count < mod.count {
+                result.insert(0, at: 0)
+            }
+            return result
+        }
+
+        let modLen = modStripped.count
+        let modHigh = UInt32(modStripped[0])
+        let modHigh2 = modLen > 1 ? (UInt32(modStripped[0]) << 8) | UInt32(modStripped[1]) : UInt32(modStripped[0]) << 8
+
+        // Long division with quotient estimation
+        while bigCompare(result, modStripped) >= 0 {
+            // Strip leading zeros
+            while result.count > 1 && result[0] == 0 {
+                result.removeFirst()
+            }
+
+            if bigCompare(result, modStripped) < 0 {
+                break
+            }
+
+            let resultLen = result.count
+            let shift = resultLen - modLen
+
+            if shift < 0 {
+                break
+            }
+
+            // Estimate quotient digit using top bytes
+            var q: UInt32
+            if shift == 0 {
+                // Direct comparison case
+                let resultHigh2 = resultLen > 1 ? (UInt32(result[0]) << 8) | UInt32(result[1]) : UInt32(result[0]) << 8
+                q = resultHigh2 / (modHigh + 1)
+                if q == 0 { q = 1 }
+            } else {
+                // Shifted case - estimate from top 2 bytes
+                let resultHigh2 = resultLen > 1 ? (UInt32(result[0]) << 8) | UInt32(result[1]) : UInt32(result[0]) << 8
+                q = min(255, resultHigh2 / (modHigh + 1))
+                if q == 0 { q = 1 }
+            }
+
+            // Create shifted mod * q
+            var modShifted = [UInt8](repeating: 0, count: resultLen)
+
+            // Multiply mod by q and place at shift position
+            var carry: UInt32 = 0
+            for i in (0..<modLen).reversed() {
+                let prod = UInt32(modStripped[i]) * q + carry
+                let destIdx = i + shift
+                if destIdx < resultLen {
+                    modShifted[destIdx] = UInt8(prod & 0xFF)
+                }
+                carry = prod >> 8
+            }
+            // Handle remaining carry
+            var carryIdx = shift - 1
+            while carry > 0 && carryIdx >= 0 {
+                modShifted[carryIdx] = UInt8(carry & 0xFF)
+                carry >>= 8
+                carryIdx -= 1
+            }
+
+            // Ensure we don't subtract more than result
+            if bigCompare(result, modShifted) < 0 {
+                // q was too large, use q=1 (just subtract shifted mod once)
+                modShifted = [UInt8](repeating: 0, count: resultLen)
+                for i in 0..<modLen {
+                    let destIdx = i + shift
+                    if destIdx < resultLen {
+                        modShifted[destIdx] = modStripped[i]
+                    }
+                }
+                // Check again
+                if bigCompare(result, modShifted) < 0 && shift > 0 {
+                    // Need to shift one less
+                    modShifted = [UInt8](repeating: 0, count: resultLen)
+                    for i in 0..<modLen {
+                        let destIdx = i + shift - 1
+                        if destIdx < resultLen {
+                            modShifted[destIdx] = modStripped[i]
+                        }
+                    }
+                }
+            }
+
+            if bigCompare(result, modShifted) >= 0 {
+                result = bigSub(result, modShifted)
+            } else {
+                // Fallback: subtract just mod
+                if bigCompare(result, modStripped) >= 0 {
+                    result = bigSub(result, modStripped)
+                } else {
                     break
                 }
             }
-
-            if shift < 0 { shift = 0 }
-
-            // Subtract mod << shift from result
-            var modShifted = [UInt8](repeating: 0, count: result.count)
-            if shift + mod.count <= result.count {
-                for i in 0..<mod.count {
-                    modShifted[result.count - shift - mod.count + i] = mod[i]
-                }
-            } else {
-                modShifted = [UInt8](repeating: 0, count: mod.count) + mod
-            }
-
-            result = bigSub(result, modShifted)
         }
 
         // Ensure result has same length as mod
@@ -338,9 +444,11 @@ struct RFBAuth {
 
     /// Choose best security type from available options
     static func chooseBestSecurityType(_ types: [RFBSecurityType]) -> RFBSecurityType? {
-        // Preference order: VNC auth (most reliable) > none > ARD (complex crypto)
-        // We prefer VNC auth because ARD requires complex Diffie-Hellman which may have issues
-        let preference: [RFBSecurityType] = [.vncAuth, .none, .appleDH, .macOSAuth]
+        // Preference order: VNC auth > ARD/macOS auth > none
+        // NOTE: ARD auth requires Diffie-Hellman with 1024-bit keys. The pure Swift
+        // bignum implementation is too slow. A production implementation would use
+        // OpenSSL or a dedicated bigint library. For now, prefer VNC auth.
+        let preference: [RFBSecurityType] = [.vncAuth, .appleDH, .macOSAuth, .none]
 
         for preferred in preference {
             if types.contains(preferred) {
