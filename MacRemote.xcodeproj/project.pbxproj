@@ -28,7 +28,34 @@
 		SET001 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC017; };
 		UTL001 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC018; };
 		VNC005 /* ZlibDecompressor.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC019; };
+		UTL002 /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = SRC021; };
+/* Unit Test Build Files */
+		TST001 /* RFBProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSRC001; };
+		TST002 /* FrameBufferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSRC002; };
+		TST003 /* AdaptiveQualityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSRC003; };
+		TST004 /* CoordinateConversionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSRC004; };
+		TST005 /* MockNetworkConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = TSRC005; };
+/* UI Test Build Files */
+		UITST001 /* MacRemoteUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UISRC001; };
+		UITST002 /* SessionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = UISRC002; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		TGT_PROXY_UNIT /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PRJ001;
+			proxyType = 1;
+			remoteGlobalIDString = TGT001;
+			remoteInfo = MacRemote;
+		};
+		TGT_PROXY_UI /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = PRJ001;
+			proxyType = 1;
+			remoteGlobalIDString = TGT001;
+			remoteInfo = MacRemote;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		PRD001 /* MacRemote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacRemote.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,11 +79,38 @@
 		SRC018 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		SRC019 /* ZlibDecompressor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZlibDecompressor.swift; sourceTree = "<group>"; };
 		SRC020 /* KeyboardInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardInputView.swift; sourceTree = "<group>"; };
+		SRC021 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		RES001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+/* Test File References */
+		PRD_TESTS /* MacRemoteTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacRemoteTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		PRD_UITESTS /* MacRemoteUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacRemoteUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		TSRC001 /* RFBProtocolTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RFBProtocolTests.swift; sourceTree = "<group>"; };
+		TSRC002 /* FrameBufferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameBufferTests.swift; sourceTree = "<group>"; };
+		TSRC003 /* AdaptiveQualityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaptiveQualityTests.swift; sourceTree = "<group>"; };
+		TSRC004 /* CoordinateConversionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateConversionTests.swift; sourceTree = "<group>"; };
+		TSRC005 /* MockNetworkConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockNetworkConnection.swift; sourceTree = "<group>"; };
+		TINFO /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		UISRC001 /* MacRemoteUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacRemoteUITests.swift; sourceTree = "<group>"; };
+		UISRC002 /* SessionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionUITests.swift; sourceTree = "<group>"; };
+		UIINFO /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		FRM001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FRM_TESTS /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FRM_UITESTS /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -70,6 +124,8 @@
 			isa = PBXGroup;
 			children = (
 				GRP001 /* MacRemote */,
+				GRP_TESTS /* MacRemoteTests */,
+				GRP_UITESTS /* MacRemoteUITests */,
 				GRP_PROD /* Products */,
 			);
 			sourceTree = "<group>";
@@ -78,6 +134,8 @@
 			isa = PBXGroup;
 			children = (
 				PRD001 /* MacRemote.app */,
+				PRD_TESTS /* MacRemoteTests.xctest */,
+				PRD_UITESTS /* MacRemoteUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -202,6 +260,7 @@
 			isa = PBXGroup;
 			children = (
 				SRC018 /* Constants.swift */,
+				SRC021 /* KeychainHelper.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -212,6 +271,62 @@
 				RES001 /* Assets.xcassets */,
 			);
 			path = Resources;
+			sourceTree = "<group>";
+		};
+/* Test Groups */
+		GRP_TESTS /* MacRemoteTests */ = {
+			isa = PBXGroup;
+			children = (
+				GRP_TESTS_VNC /* VNC */,
+				GRP_TESTS_NET /* Network */,
+				GRP_TESTS_HELPERS /* Helpers */,
+				GRP_TESTS_MOCKS /* Mocks */,
+				TINFO /* Info.plist */,
+			);
+			path = MacRemoteTests;
+			sourceTree = "<group>";
+		};
+		GRP_TESTS_VNC /* VNC */ = {
+			isa = PBXGroup;
+			children = (
+				TSRC001 /* RFBProtocolTests.swift */,
+				TSRC002 /* FrameBufferTests.swift */,
+			);
+			path = VNC;
+			sourceTree = "<group>";
+		};
+		GRP_TESTS_NET /* Network */ = {
+			isa = PBXGroup;
+			children = (
+				TSRC003 /* AdaptiveQualityTests.swift */,
+			);
+			path = Network;
+			sourceTree = "<group>";
+		};
+		GRP_TESTS_HELPERS /* Helpers */ = {
+			isa = PBXGroup;
+			children = (
+				TSRC004 /* CoordinateConversionTests.swift */,
+			);
+			path = Helpers;
+			sourceTree = "<group>";
+		};
+		GRP_TESTS_MOCKS /* Mocks */ = {
+			isa = PBXGroup;
+			children = (
+				TSRC005 /* MockNetworkConnection.swift */,
+			);
+			path = Mocks;
+			sourceTree = "<group>";
+		};
+		GRP_UITESTS /* MacRemoteUITests */ = {
+			isa = PBXGroup;
+			children = (
+				UISRC001 /* MacRemoteUITests.swift */,
+				UISRC002 /* SessionUITests.swift */,
+				UIINFO /* Info.plist */,
+			);
+			path = MacRemoteUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -234,6 +349,42 @@
 			productReference = PRD001 /* MacRemote.app */;
 			productType = "com.apple.product-type.application";
 		};
+		TGT_TESTS /* MacRemoteTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFG_TGT_TESTS /* Build configuration list for PBXNativeTarget "MacRemoteTests" */;
+			buildPhases = (
+				SRC_PH_TESTS /* Sources */,
+				FRM_TESTS /* Frameworks */,
+				RES_PH_TESTS /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DEP_TESTS /* PBXTargetDependency */,
+			);
+			name = MacRemoteTests;
+			productName = MacRemoteTests;
+			productReference = PRD_TESTS /* MacRemoteTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		TGT_UITESTS /* MacRemoteUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CFG_TGT_UITESTS /* Build configuration list for PBXNativeTarget "MacRemoteUITests" */;
+			buildPhases = (
+				SRC_PH_UITESTS /* Sources */,
+				FRM_UITESTS /* Frameworks */,
+				RES_PH_UITESTS /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DEP_UITESTS /* PBXTargetDependency */,
+			);
+			name = MacRemoteUITests;
+			productName = MacRemoteUITests;
+			productReference = PRD_UITESTS /* MacRemoteUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -246,6 +397,14 @@
 				TargetAttributes = {
 					TGT001 = {
 						CreatedOnToolsVersion = 15.0;
+					};
+					TGT_TESTS = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = TGT001;
+					};
+					TGT_UITESTS = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = TGT001;
 					};
 				};
 			};
@@ -263,6 +422,8 @@
 			projectRoot = "";
 			targets = (
 				TGT001 /* MacRemote */,
+				TGT_TESTS /* MacRemoteTests */,
+				TGT_UITESTS /* MacRemoteUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -273,6 +434,20 @@
 			buildActionMask = 2147483647;
 			files = (
 				APP003 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RES_PH_TESTS /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		RES_PH_UITESTS /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -303,10 +478,45 @@
 				SET001 /* SettingsView.swift in Sources */,
 				UTL001 /* Constants.swift in Sources */,
 				VNC005 /* ZlibDecompressor.swift in Sources */,
+				UTL002 /* KeychainHelper.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRC_PH_TESTS /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				TST001 /* RFBProtocolTests.swift in Sources */,
+				TST002 /* FrameBufferTests.swift in Sources */,
+				TST003 /* AdaptiveQualityTests.swift in Sources */,
+				TST004 /* CoordinateConversionTests.swift in Sources */,
+				TST005 /* MockNetworkConnection.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRC_PH_UITESTS /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				UITST001 /* MacRemoteUITests.swift in Sources */,
+				UITST002 /* SessionUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DEP_TESTS /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = TGT001 /* MacRemote */;
+			targetProxy = TGT_PROXY_UNIT /* PBXContainerItemProxy */;
+		};
+		DEP_UITESTS /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = TGT001 /* MacRemote */;
+			targetProxy = TGT_PROXY_UI /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		CFG_DBG /* Debug */ = {
@@ -498,6 +708,114 @@
 			};
 			name = Release;
 		};
+/* Unit Test Target Configs */
+		CFG_TESTS_DBG /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MVS7F3PV7T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacRemoteTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macremote.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MacRemote";
+			};
+			name = Debug;
+		};
+		CFG_TESTS_REL /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MVS7F3PV7T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacRemoteTests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macremote.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacRemote.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MacRemote";
+			};
+			name = Release;
+		};
+/* UI Test Target Configs */
+		CFG_UITESTS_DBG /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MVS7F3PV7T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacRemoteUITests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macremote.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = MacRemote;
+			};
+			name = Debug;
+		};
+		CFG_UITESTS_REL /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = MVS7F3PV7T;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MacRemoteUITests/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macremote.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_TARGET_NAME = MacRemote;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -515,6 +833,24 @@
 			buildConfigurations = (
 				CFG_TGT_DBG /* Debug */,
 				CFG_TGT_REL /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG_TGT_TESTS /* Build configuration list for PBXNativeTarget "MacRemoteTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CFG_TESTS_DBG /* Debug */,
+				CFG_TESTS_REL /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CFG_TGT_UITESTS /* Build configuration list for PBXNativeTarget "MacRemoteUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CFG_UITESTS_DBG /* Debug */,
+				CFG_UITESTS_REL /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
