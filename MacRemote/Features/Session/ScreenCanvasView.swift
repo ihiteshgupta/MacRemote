@@ -239,59 +239,42 @@ struct ScreenCanvasView: View {
         guard displayWidth > 0, displayHeight > 0 else { return .zero }
 
         let viewSize = geometry.size
-        let imageAspect = CGFloat(displayWidth) / CGFloat(displayHeight)
-        let viewAspect = viewSize.width / viewSize.height
+        let viewCenter = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
 
-        var imageRect: CGRect
+        // Calculate base image rect (aspect-fit)
+        let imageRect = calculateBaseImageRect(viewSize: viewSize)
 
-        if imageAspect > viewAspect {
-            // Image is wider - fit to width
-            let height = viewSize.width / imageAspect
-            let y = (viewSize.height - height) / 2
-            imageRect = CGRect(x: 0, y: y, width: viewSize.width, height: height)
-        } else {
-            // Image is taller - fit to height
-            let width = viewSize.height * imageAspect
-            let x = (viewSize.width - width) / 2
-            imageRect = CGRect(x: x, y: 0, width: width, height: viewSize.height)
-        }
+        // Apply scale around view center
+        let scaledRect = scaleRect(imageRect, by: scale, around: viewCenter)
 
-        // Account for scale and offset
-        imageRect = imageRect.applying(CGAffineTransform(scaleX: scale, y: scale))
-        imageRect = imageRect.offsetBy(dx: offset.width, dy: offset.height)
+        // Apply offset
+        let finalRect = scaledRect.offsetBy(dx: offset.width, dy: offset.height)
 
         // Convert point relative to displayed image
-        let relX = (point.x - imageRect.minX) / imageRect.width
-        let relY = (point.y - imageRect.minY) / imageRect.height
+        let relX = (point.x - finalRect.minX) / finalRect.width
+        let relY = (point.y - finalRect.minY) / finalRect.height
 
-        // Add display offset for multi-monitor support
-        return CGPoint(
-            x: relX * CGFloat(displayWidth) + CGFloat(displayOffsetX),
-            y: relY * CGFloat(displayHeight)
-        )
+        // Clamp to valid range and add display offset for multi-monitor support
+        let remoteX = max(0, min(1, relX)) * CGFloat(displayWidth) + CGFloat(displayOffsetX)
+        let remoteY = max(0, min(1, relY)) * CGFloat(displayHeight)
+
+        return CGPoint(x: remoteX, y: remoteY)
     }
 
     private func remoteToScreen(_ point: CGPoint, in geometry: GeometryProxy) -> CGPoint {
         guard displayWidth > 0, displayHeight > 0 else { return .zero }
 
         let viewSize = geometry.size
-        let imageAspect = CGFloat(displayWidth) / CGFloat(displayHeight)
-        let viewAspect = viewSize.width / viewSize.height
+        let viewCenter = CGPoint(x: viewSize.width / 2, y: viewSize.height / 2)
 
-        var imageRect: CGRect
+        // Calculate base image rect (aspect-fit)
+        let imageRect = calculateBaseImageRect(viewSize: viewSize)
 
-        if imageAspect > viewAspect {
-            let height = viewSize.width / imageAspect
-            let y = (viewSize.height - height) / 2
-            imageRect = CGRect(x: 0, y: y, width: viewSize.width, height: height)
-        } else {
-            let width = viewSize.height * imageAspect
-            let x = (viewSize.width - width) / 2
-            imageRect = CGRect(x: x, y: 0, width: width, height: viewSize.height)
-        }
+        // Apply scale around view center
+        let scaledRect = scaleRect(imageRect, by: scale, around: viewCenter)
 
-        imageRect = imageRect.applying(CGAffineTransform(scaleX: scale, y: scale))
-        imageRect = imageRect.offsetBy(dx: offset.width, dy: offset.height)
+        // Apply offset
+        let finalRect = scaledRect.offsetBy(dx: offset.width, dy: offset.height)
 
         // Adjust for display offset
         let adjustedX = point.x - CGFloat(displayOffsetX)
@@ -299,8 +282,38 @@ struct ScreenCanvasView: View {
         let relY = point.y / CGFloat(displayHeight)
 
         return CGPoint(
-            x: imageRect.minX + relX * imageRect.width,
-            y: imageRect.minY + relY * imageRect.height
+            x: finalRect.minX + relX * finalRect.width,
+            y: finalRect.minY + relY * finalRect.height
         )
+    }
+
+    private func calculateBaseImageRect(viewSize: CGSize) -> CGRect {
+        let imageAspect = CGFloat(displayWidth) / CGFloat(displayHeight)
+        let viewAspect = viewSize.width / viewSize.height
+
+        if imageAspect > viewAspect {
+            // Image is wider - fit to width
+            let height = viewSize.width / imageAspect
+            let y = (viewSize.height - height) / 2
+            return CGRect(x: 0, y: y, width: viewSize.width, height: height)
+        } else {
+            // Image is taller - fit to height
+            let width = viewSize.height * imageAspect
+            let x = (viewSize.width - width) / 2
+            return CGRect(x: x, y: 0, width: width, height: viewSize.height)
+        }
+    }
+
+    private func scaleRect(_ rect: CGRect, by scale: CGFloat, around center: CGPoint) -> CGRect {
+        // Translate to origin, scale, translate back
+        let translatedX = rect.origin.x - center.x
+        let translatedY = rect.origin.y - center.y
+
+        let scaledX = translatedX * scale + center.x
+        let scaledY = translatedY * scale + center.y
+        let scaledWidth = rect.width * scale
+        let scaledHeight = rect.height * scale
+
+        return CGRect(x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight)
     }
 }

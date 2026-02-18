@@ -12,100 +12,146 @@ final class FrameBuffer: ObservableObject {
     private var pixelFormat: PixelFormat = .rgb888
     private let bytesPerPixel = 4
 
+    // Batching: track dirty state and throttle image updates
+    private var isDirty = false
+    private var pendingUpdateWorkItem: DispatchWorkItem?
+    private let updateThrottleInterval: TimeInterval = 0.016 // ~60fps max
+
     func initialize(width: Int, height: Int, pixelFormat: PixelFormat) {
         self.width = width
         self.height = height
         self.pixelFormat = pixelFormat
         self.pixelData = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
-        updateImage()
+        updateImageNow()
     }
 
-    func updateRegion(x: Int, y: Int, width: Int, height: Int, data: Data) {
+    func updateRegion(x: Int, y: Int, width regionWidth: Int, height regionHeight: Int, data: Data) {
         guard !pixelData.isEmpty else { return }
+        guard x >= 0, y >= 0, x < self.width, y < self.height else { return }
 
         let srcBytesPerPixel = Int(pixelFormat.bitsPerPixel) / 8
 
+        // Clamp region to buffer bounds
+        let clampedWidth = min(regionWidth, self.width - x)
+        let clampedHeight = min(regionHeight, self.height - y)
+
+        // Fast path: 32-bit BGRA with redShift=16 (most common from macOS Screen Sharing)
+        if pixelFormat.bitsPerPixel == 32 && pixelFormat.redShift == 16 {
+            updateRegionFast32(x: x, y: y, width: clampedWidth, height: clampedHeight, data: data)
+        } else {
+            updateRegionGeneric(x: x, y: y, width: clampedWidth, height: clampedHeight, data: data, srcBytesPerPixel: srcBytesPerPixel)
+        }
+
+        scheduleImageUpdate()
+    }
+
+    // Optimized path for 32-bit BGRA (bulk row copy)
+    private func updateRegionFast32(x: Int, y: Int, width: Int, height: Int, data: Data) {
+        data.withUnsafeBytes { srcBuffer in
+            guard let srcBase = srcBuffer.baseAddress else { return }
+
+            for row in 0..<height {
+                let srcRowOffset = row * width * 4
+                let dstRowOffset = ((y + row) * self.width + x) * 4
+
+                guard srcRowOffset + width * 4 <= data.count else { continue }
+                guard dstRowOffset + width * 4 <= pixelData.count else { continue }
+
+                // Copy entire row at once, swapping BGR to RGB
+                for col in 0..<width {
+                    let srcPixelOffset = srcRowOffset + col * 4
+                    let dstPixelOffset = dstRowOffset + col * 4
+
+                    let srcPtr = srcBase.advanced(by: srcPixelOffset)
+                    let b = srcPtr.load(fromByteOffset: 0, as: UInt8.self)
+                    let g = srcPtr.load(fromByteOffset: 1, as: UInt8.self)
+                    let r = srcPtr.load(fromByteOffset: 2, as: UInt8.self)
+
+                    pixelData[dstPixelOffset] = r
+                    pixelData[dstPixelOffset + 1] = g
+                    pixelData[dstPixelOffset + 2] = b
+                    pixelData[dstPixelOffset + 3] = 255
+                }
+            }
+        }
+    }
+
+    // Generic path for other pixel formats
+    private func updateRegionGeneric(x: Int, y: Int, width: Int, height: Int, data: Data, srcBytesPerPixel: Int) {
         for row in 0..<height {
             for col in 0..<width {
                 let srcOffset = (row * width + col) * srcBytesPerPixel
                 let dstX = x + col
                 let dstY = y + row
 
-                guard dstX < self.width && dstY < self.height else { continue }
                 guard srcOffset + srcBytesPerPixel <= data.count else { continue }
 
                 let dstOffset = (dstY * self.width + dstX) * bytesPerPixel
 
-                // Convert pixel to RGBA based on pixel format
                 let (r, g, b) = extractRGB(from: data, offset: srcOffset)
 
                 pixelData[dstOffset] = r
                 pixelData[dstOffset + 1] = g
                 pixelData[dstOffset + 2] = b
-                pixelData[dstOffset + 3] = 255 // Alpha
+                pixelData[dstOffset + 3] = 255
             }
         }
-
-        updateImage()
     }
 
     func copyRect(srcX: Int, srcY: Int, dstX: Int, dstY: Int, width: Int, height: Int) {
         guard !pixelData.isEmpty else { return }
 
-        // Create temp buffer for the region
-        var temp = [UInt8](repeating: 0, count: width * height * bytesPerPixel)
+        // Determine copy direction to handle overlapping regions
+        let copyRowsForward = srcY < dstY || (srcY == dstY && srcX < dstX)
 
-        // Copy source region to temp
-        for row in 0..<height {
-            for col in 0..<width {
-                let sx = srcX + col
-                let sy = srcY + row
-                guard sx < self.width && sy < self.height else { continue }
-
-                let srcOffset = (sy * self.width + sx) * bytesPerPixel
-                let tempOffset = (row * width + col) * bytesPerPixel
-
-                for i in 0..<bytesPerPixel {
-                    temp[tempOffset + i] = pixelData[srcOffset + i]
-                }
+        if copyRowsForward {
+            // Copy from bottom to top to handle downward overlap
+            for row in stride(from: height - 1, through: 0, by: -1) {
+                copyRow(srcX: srcX, srcY: srcY + row, dstX: dstX, dstY: dstY + row, width: width)
+            }
+        } else {
+            // Copy from top to bottom
+            for row in 0..<height {
+                copyRow(srcX: srcX, srcY: srcY + row, dstX: dstX, dstY: dstY + row, width: width)
             }
         }
 
-        // Copy temp to destination
-        for row in 0..<height {
-            for col in 0..<width {
-                let dx = dstX + col
-                let dy = dstY + row
-                guard dx < self.width && dy < self.height else { continue }
+        scheduleImageUpdate()
+    }
 
-                let dstOffset = (dy * self.width + dx) * bytesPerPixel
-                let tempOffset = (row * width + col) * bytesPerPixel
+    private func copyRow(srcX: Int, srcY: Int, dstX: Int, dstY: Int, width: Int) {
+        guard srcY >= 0, srcY < self.height, dstY >= 0, dstY < self.height else { return }
 
-                for i in 0..<bytesPerPixel {
-                    pixelData[dstOffset + i] = temp[tempOffset + i]
-                }
-            }
+        let clampedSrcX = max(0, srcX)
+        let clampedDstX = max(0, dstX)
+        let adjustedWidth = min(width, min(self.width - clampedSrcX, self.width - clampedDstX))
+
+        guard adjustedWidth > 0 else { return }
+
+        let srcOffset = (srcY * self.width + clampedSrcX) * bytesPerPixel
+        let dstOffset = (dstY * self.width + clampedDstX) * bytesPerPixel
+        let bytesToCopy = adjustedWidth * bytesPerPixel
+
+        // Use memmove for potentially overlapping regions
+        pixelData.withUnsafeMutableBytes { buffer in
+            guard let ptr = buffer.baseAddress else { return }
+            memmove(ptr.advanced(by: dstOffset), ptr.advanced(by: srcOffset), bytesToCopy)
         }
-
-        updateImage()
     }
 
     private func extractRGB(from data: Data, offset: Int) -> (UInt8, UInt8, UInt8) {
         switch pixelFormat.bitsPerPixel {
         case 32:
-            // Assuming BGRA or RGBA format
             let b = data[offset]
             let g = data[offset + 1]
             let r = data[offset + 2]
-            // Respect pixel format shifts
             if pixelFormat.redShift == 0 {
-                return (b, g, r) // BGR
+                return (b, g, r)
             } else {
-                return (r, g, b) // RGB
+                return (r, g, b)
             }
 
         case 16:
-            // RGB565
             let byte1 = UInt16(data[offset])
             let byte2 = UInt16(data[offset + 1])
             let pixel = pixelFormat.bigEndian ? (byte1 << 8 | byte2) : (byte2 << 8 | byte1)
@@ -116,7 +162,6 @@ final class FrameBuffer: ObservableObject {
             return (r, g, b)
 
         case 8:
-            // Grayscale or palette (simplified)
             let gray = data[offset]
             return (gray, gray, gray)
 
@@ -125,30 +170,69 @@ final class FrameBuffer: ObservableObject {
         }
     }
 
-    private func updateImage() {
+    // Throttle image updates to avoid excessive UIImage creation
+    private func scheduleImageUpdate() {
+        isDirty = true
+
+        // Cancel any pending update
+        pendingUpdateWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                self?.flushImageUpdate()
+            }
+        }
+        pendingUpdateWorkItem = workItem
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + updateThrottleInterval, execute: workItem)
+    }
+
+    private func flushImageUpdate() {
+        guard isDirty else { return }
+        isDirty = false
+        updateImageNow()
+    }
+
+    private func updateImageNow() {
         guard !pixelData.isEmpty, width > 0, height > 0 else { return }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue)
 
-        guard let context = CGContext(
-            data: &pixelData,
+        // Create a copy of pixel data for thread safety
+        let dataCopy = pixelData
+        guard let provider = CGDataProvider(data: Data(dataCopy) as CFData) else { return }
+
+        guard let cgImage = CGImage(
             width: width,
             height: height,
             bitsPerComponent: 8,
+            bitsPerPixel: 32,
             bytesPerRow: width * bytesPerPixel,
             space: colorSpace,
-            bitmapInfo: bitmapInfo.rawValue
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
         ) else { return }
 
-        guard let cgImage = context.makeImage() else { return }
         image = UIImage(cgImage: cgImage)
     }
 
+    // Force immediate update (for full screen refresh)
+    func forceUpdate() {
+        pendingUpdateWorkItem?.cancel()
+        isDirty = false
+        updateImageNow()
+    }
+
     func clear() {
+        pendingUpdateWorkItem?.cancel()
         pixelData = []
         width = 0
         height = 0
         image = nil
+        isDirty = false
     }
 }

@@ -182,15 +182,23 @@ class KeyboardTextField: UITextField, UITextFieldDelegate {
         guard let scalar = char.unicodeScalars.first else { return }
         let charCode = UInt32(scalar.value)
 
-        // Use Unicode keysym format: 0x01000000 + unicode value
-        // This is more widely compatible with modern VNC servers
-        let keySym = 0x01000000 | charCode
+        // For ASCII printable characters (0x20-0x7E), use the character code directly
+        // VNC/X11 keysyms for Latin-1 match ASCII values
+        // Only use Unicode format (0x01000000 | code) for non-ASCII characters
+        let keySym: UInt32
+        if charCode >= 0x20 && charCode <= 0x7E {
+            keySym = charCode  // Direct ASCII keysym
+        } else if charCode >= 0xA0 && charCode <= 0xFF {
+            keySym = charCode  // Latin-1 supplement (also direct mapping)
+        } else {
+            keySym = 0x01000000 | charCode  // Unicode keysym for other characters
+        }
 
         print("KeyboardTextField: sendCharacter '\(char)' -> keySym=0x\(String(keySym, radix: 16))")
 
         keyboardEventHandler?(KeyEvent(key: keySym, isPressed: true))
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
             self?.keyboardEventHandler?(KeyEvent(key: keySym, isPressed: false))
         }
     }
